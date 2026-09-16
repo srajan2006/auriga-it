@@ -1,315 +1,932 @@
- # AVault
+# AVault
 
-AVault is a college AV equipment lending system. This repository currently contains **Phase 10: admin settings, borrowing limits, and transfer rules**: a Django REST API backed by PostgreSQL and a Next.js frontend connected to JWT authentication, inventory, availability, bookings, loans, returns, late fees, transfer history, and persisted system settings.
+AVault is a digital equipment lending and inventory management system designed for college AV rooms. It replaces the traditional paper-based equipment register with a centralized web application for managing equipment, bookings, loans, returns, overdue items, and borrowing history.
 
-## Problem statement
+The system supports three roles:
 
-The AV room's paper register makes availability, bookings, borrowers, returns, and late equipment difficult to track. AVault will replace that register with a shared system for students, staff, and administrators.
+* **STUDENT** — browse equipment, check availability, request bookings, view loans and fees.
+* **STAFF** — manage bookings, issue equipment, process returns, handle overdue items, and transfer active loans.
+* **ADMIN** — manage users and system-level borrowing settings.
 
-## Architecture
+---
 
-```text
-Next.js frontend (localhost:3000)
-	|
-	v
-Django REST API (localhost:8000)
-	|
-	v
-PostgreSQL (localhost:5432)
-```
+## 1. Technology Stack
 
-The frontend only talks to the REST API. It never connects directly to PostgreSQL.
+### Frontend
 
-## Technology stack
+* Next.js
+* TypeScript
+* Tailwind CSS
 
-- Next.js, TypeScript, and Tailwind CSS
-- Python, Django, Django REST Framework, and SimpleJWT dependency
-- PostgreSQL
+### Backend
 
-## Repository structure
+* Python
+* Django
+* Django REST Framework
+* SimpleJWT
+
+### Database
+
+* PostgreSQL
+
+### Development
+
+* Git
+* GitHub
+* GitHub Codespaces
+
+---
+
+## 2. Project Structure
 
 ```text
 avault/
+│
 ├── backend/
-│   ├── accounts/        # Custom user model, JWT auth, and role permissions
-│   ├── common/          # Health endpoint
-│   ├── inventory/       # Categories, equipment models, units, and seed data
-│   ├── bookings/        # Reservation dates and assigned units for availability checks
-│   ├── loans/           # Issued equipment and active loan records
-│   ├── config/          # Django project configuration
 │   ├── manage.py
-│   └── requirements.txt
-├── frontend/
-│   ├── app/              # Next.js App Router pages
-│   ├── lib/              # API helper functions
-│   ├── package.json
+│   ├── requirements.txt
+│   ├── .env
 │   └── ...
-├── .env.example
-└── README.md
+│
+├── frontend/
+│   ├── package.json
+│   ├── next.config.*
+│   └── ...
+│
+├── README.md
+├── REASONING.md
+└── ...
 ```
 
-System settings are persisted in PostgreSQL and editable by admins through the settings API.
+The exact application folders may differ depending on the implementation.
 
-## Prerequisites
+---
 
-- Python 3.11+
-- Node.js 18.17+
-- PostgreSQL 14+
+# 3. Prerequisites
 
-## PostgreSQL setup
+For local development or GitHub Codespaces, install/have available:
 
-Create a local PostgreSQL database and user. For the default development connection:
+* Python 3
+* pip
+* Node.js and npm
+* PostgreSQL
+* Git
+
+GitHub Codespaces can be used as the primary development environment.
+
+---
+
+# 4. PostgreSQL Setup
+
+PostgreSQL is not automatically created simply because the project uses Django.
+
+For a Codespace development environment, PostgreSQL can be installed locally inside the Codespace.
+
+## Start PostgreSQL
+
+```bash
+sudo service postgresql start
+```
+
+Check its status:
+
+```bash
+sudo service postgresql status
+```
+
+If you are already operating as `root`, the `sudo` command is not required.
+
+---
+
+## Create the AVault database
+
+Enter PostgreSQL as the PostgreSQL administrator:
+
+```bash
+su - postgres
+psql
+```
+
+Check existing users:
 
 ```sql
-CREATE USER postgres WITH PASSWORD 'postgres';
-CREATE DATABASE avault OWNER postgres;
+\du
 ```
 
-If your local PostgreSQL installation already has a different user or password, update `DATABASE_URL` accordingly.
+Create the application user if it does not already exist:
 
-## Environment variables
-
-Copy `.env.example` to `.env` for the backend and export the values before starting Django. The frontend reads `NEXT_PUBLIC_API_URL` from `frontend/.env.local`.
-
-Backend `.env`:
-
-```dotenv
-SECRET_KEY=replace-with-a-long-random-development-value
-DEBUG=True
-DATABASE_URL=postgresql://postgres:postgres@localhost:5432/avault
-ALLOWED_HOSTS=localhost,127.0.0.1
-CORS_ALLOWED_ORIGINS=http://localhost:3000
-MAX_ACTIVE_LOANS_PER_USER=3
+```sql
+CREATE USER avault_user WITH PASSWORD 'avault_password';
 ```
 
-Frontend `frontend/.env.local`:
+If the user already exists, reset its password:
 
-```dotenv
-NEXT_PUBLIC_API_URL=http://localhost:8000/api
+```sql
+ALTER USER avault_user WITH PASSWORD 'avault_password';
 ```
 
-Do not commit real secrets or local environment files.
+Create the database:
 
-## Run the backend
+```sql
+CREATE DATABASE avault_db OWNER avault_user;
+```
+
+If the database already exists, do not create it again.
+
+Grant privileges:
+
+```sql
+GRANT ALL PRIVILEGES ON DATABASE avault_db TO avault_user;
+```
+
+Exit:
+
+```sql
+\q
+```
+
+Then:
+
+```bash
+exit
+```
+
+---
+
+## Test PostgreSQL
+
+Run:
+
+```bash
+psql -U avault_user -d avault_db -h localhost
+```
+
+Enter:
+
+```text
+avault_password
+```
+
+A successful connection should display:
+
+```text
+avault_db=>
+```
+
+Exit with:
+
+```sql
+\q
+```
+
+---
+
+# 5. Backend Setup
+
+Open a terminal and move to the backend:
 
 ```bash
 cd backend
+```
+
+Check that Django's management file exists:
+
+```bash
+ls
+```
+
+You should see:
+
+```text
+manage.py
+```
+
+---
+
+## Create a virtual environment
+
+If `.venv` does not exist:
+
+```bash
 python -m venv .venv
+```
+
+Activate it:
+
+```bash
 source .venv/bin/activate
+```
+
+You should see something similar to:
+
+```text
+(.venv) ...
+```
+
+---
+
+## Install dependencies
+
+```bash
 pip install -r requirements.txt
+```
+
+If PostgreSQL support is required and not already included:
+
+```bash
+pip install psycopg2-binary
+```
+
+If it was installed manually, make sure it is included in `requirements.txt`.
+
+---
+
+# 6. Environment Variables
+
+The backend should contain a `.env` file.
+
+For the Codespace PostgreSQL setup:
+
+```env
+DATABASE_URL=postgresql://avault_user:avault_password@localhost:5432/avault_db
+```
+
+Other required environment variables depend on the implementation.
+
+Do **not** commit passwords, secret keys, or other credentials to GitHub.
+
+Add `.env` to `.gitignore`.
+
+Example:
+
+```gitignore
+.env
+.venv/
+__pycache__/
+```
+
+---
+
+# 7. Run Django Checks
+
+From the `backend` directory:
+
+```bash
 python manage.py check
+```
+
+If there are no configuration errors, continue.
+
+---
+
+# 8. Run Database Migrations
+
+Run:
+
+```bash
+python manage.py makemigrations
+```
+
+Then:
+
+```bash
 python manage.py migrate
+```
+
+If migrations are already generated and tracked in the repository, normally only:
+
+```bash
+python manage.py migrate
+```
+
+is required.
+
+---
+
+# 9. Seed Development Data
+
+If the project contains the custom seed command:
+
+```bash
 python manage.py seed_data
-python manage.py runserver 8000
 ```
 
-Health endpoint:
+This can create development users, categories, equipment models, physical equipment units, and default settings.
+
+Do not use development seed credentials in production.
+
+---
+
+# 10. Run the Backend
+
+From:
 
 ```text
-GET http://localhost:8000/api/health/
+backend/
 ```
 
-It returns HTTP 200 when Django and PostgreSQL are available, and HTTP 503 when Django is running but the database cannot be reached.
+run:
 
-## Authentication API
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
 
-All authentication endpoints are under `/api/auth/`:
+The Django API will normally be available at:
 
 ```text
-POST /api/auth/register/
-POST /api/auth/login/
-POST /api/auth/refresh/
-POST /api/auth/logout/       # Requires Bearer access token
-GET  /api/auth/me/           # Requires Bearer access token
+http://localhost:8000
 ```
 
-Registration always creates a `STUDENT`. `STAFF` and `ADMIN` accounts must be created or promoted by an administrator; clients cannot submit a role during registration. Access tokens expire after 30 minutes, refresh tokens after one day, and logout blacklists the submitted refresh token.
+In GitHub Codespaces, port `8000` should appear in the **Ports** section.
 
-Send protected requests with:
+If the project contains a health endpoint, verify it using:
 
 ```text
-Authorization: Bearer <access-token>
+/api/health/
 ```
 
-## Inventory API
+---
 
-Inventory reads require authentication. Category and equipment model writes, plus all physical unit management, require `STAFF` or `ADMIN` access.
+# 11. Run the Frontend
 
-```text
-GET    /api/categories/
-POST   /api/categories/             # STAFF/ADMIN
-PATCH  /api/categories/{id}/        # STAFF/ADMIN
-DELETE /api/categories/{id}/        # STAFF/ADMIN
-GET    /api/equipment/
-POST   /api/equipment/              # STAFF/ADMIN
-PATCH  /api/equipment/{id}/         # STAFF/ADMIN
-DELETE /api/equipment/{id}/         # STAFF/ADMIN
-GET    /api/equipment/{id}/availability/
-GET    /api/equipment-units/        # STAFF/ADMIN
-POST   /api/equipment-units/        # STAFF/ADMIN
-PATCH  /api/equipment-units/{id}/   # STAFF/ADMIN
-DELETE /api/equipment-units/{id}/   # STAFF/ADMIN
-```
+Open a **second terminal**.
 
-Equipment supports `search`, `category`, and `availability=available|unavailable` query parameters. Students see active equipment and aggregate unit counts; physical asset records are staff/admin-only.
-
-## Date-range availability
-
-Check individual physical units for a date range without creating a booking:
-
-```text
-GET /api/equipment/{id}/availability/?start_date=2026-09-12&end_date=2026-09-14
-```
-
-The date range uses a half-open interval. An existing reservation conflicts when `requested_start < existing_end` and `requested_end > existing_start`; therefore, a request beginning on an existing reservation's end date is adjacent and does not conflict. Pending and approved reservations block assigned units. Rejected, cancelled, and completed reservations do not. Units with non-`AVAILABLE` status are excluded regardless of reservations.
-
-The student-facing search is available at `/availability`. It displays available quantity and asset codes, but does not create or modify bookings.
-
-## Booking API
-
-Students can create and view their own booking requests. Staff and admins can view all requests, approve requests by assigning physical unit IDs, reject requests, and cancel eligible requests:
-
-```text
-GET  /api/bookings/
-POST /api/bookings/
-GET  /api/bookings/{id}/
-POST /api/bookings/{id}/approve/   # STAFF/ADMIN, with unit_ids
-POST /api/bookings/{id}/reject/    # STAFF/ADMIN
-POST /api/bookings/{id}/cancel/    # Owner or STAFF/ADMIN
-```
-
-Booking creation re-checks date-range availability and equipment quantity limits on the backend. Approval uses a database transaction, locks selected units, verifies exact equipment quantities, prevents conflicts, and marks assigned units `RESERVED`. The frontend pages are `/bookings` for students and `/staff/bookings` for staff/admin users.
-
-## Loans and equipment issue API
-
-Only staff and admins can issue equipment. A booking must be `APPROVED`, have assigned physical units, and not already have a loan:
-
-```text
-GET  /api/loans/                         # Students see only their own loans
-GET  /api/loans/{id}/
-POST /api/loans/issue-booking/{booking_id}/  # STAFF/ADMIN
-```
-
-Issue requests require `due_at` and may include per-unit issue conditions. The backend transaction locks the booking and units, snapshots `condition_at_issue`, creates an `ACTIVE` loan, and changes units from `RESERVED` to `ISSUED`. The student loan page is `/loans`; the staff issue desk is `/staff/loans`.
-
-## Returns and late fees API
-
-Staff and admins process every issued unit in a loan in one transaction:
-
-```text
-POST /api/loans/{id}/return/
-GET  /api/late-fees/
-POST /api/late-fees/{id}/pay/      # STAFF/ADMIN
-POST /api/late-fees/{id}/waive/    # STAFF/ADMIN
-```
-
-Each return item records a return condition and resulting unit status (`AVAILABLE`, `DAMAGED`, `MAINTENANCE`, or `LOST`). A loan can only be returned once. Late days are never negative and are calculated from the return date versus the due date; the fee is `late_days × late_fee_per_day`, summed across returned equipment units. On-time returns create a zero-value waived fee. The staff return desk is `/staff/returns`; students see overdue loans and pending fees at `/loans`.
-
-## Active loan transfer API
-
-Staff and admins can transfer an active or overdue loan to another active student without creating a new loan or changing equipment state:
-
-```text
-POST /api/loans/{id}/transfer/
-GET  /api/loans/{id}/transfers/
-```
-
-The request body is `{ "new_borrower_id": 123, "reason": "Club handover" }`. The original loan ID, items, unit status, issue time, due date, loan status, booking, and late-fee timeline remain unchanged. Transfer history is append-only and returned newest first. `MAX_ACTIVE_LOANS_PER_USER` controls destination eligibility and defaults to `3`.
-
-## System settings API
-
-Authenticated users can read current settings, but only admins can modify them:
-
-```text
-GET   /api/settings/
-PATCH /api/settings/       # ADMIN only
-```
-
-The persisted settings are:
-
-- `max_active_loans_per_user`
-- `max_units_per_booking`
-- `default_late_fee_per_day`
-
-Booking creation, transfer eligibility, and late-fee calculation read these values dynamically from PostgreSQL. `MAX_ACTIVE_LOANS_PER_USER` remains as a development environment fallback/compatibility setting, while the database singleton is authoritative after migration.
-
-## Final lifecycle verification
-
-The backend regression suite includes the complete path:
-
-```text
-student -> availability -> booking -> staff approval -> unit assignment
--> issue -> active loan -> staff transfer -> overdue state -> return -> late fee
-```
-
-The transfer lifecycle asserts that the same loan, loan item, and equipment unit remain in place; the unit stays `ISSUED` while transferred; the original due date and overdue duration are preserved; the original borrower loses access; the new borrower gains access; and the unit becomes `AVAILABLE` only after a good-condition return. Transfer records remain append-only.
-
-## Run the frontend
-
-In a second terminal:
+Go to:
 
 ```bash
 cd frontend
-cp ../.env.example .env.local
+```
+
+Install dependencies:
+
+```bash
+npm install
+```
+
+Start Next.js:
+
+```bash
+npm run dev
+```
+
+The frontend normally runs on:
+
+```text
+http://localhost:3000
+```
+
+Do not stop the backend terminal while running the frontend.
+
+The development setup therefore normally uses:
+
+```text
+Terminal 1 → Django → port 8000
+Terminal 2 → Next.js → port 3000
+PostgreSQL → port 5432
+```
+
+---
+
+# 12. Application Flow
+
+The main workflow is:
+
+```text
+Student
+   ↓
+Browse Equipment
+   ↓
+Check Availability
+   ↓
+Create Booking Request
+   ↓
+Staff Approval
+   ↓
+Equipment Issue
+   ↓
+Active Loan
+   ↓
+Return
+   ↓
+Condition Check
+   ↓
+Available / Damaged / Maintenance
+```
+
+For overdue loans:
+
+```text
+Due Date Passed
+      ↓
+OVERDUE
+      ↓
+Late Fee Calculation
+      ↓
+Return
+      ↓
+Late Fee Pending / Paid / Waived
+```
+
+---
+
+# 13. Active Loan Transfer
+
+AVault supports transferring an active loan from one student to another.
+
+A transfer is **not** a return and does not create a new loan.
+
+The following remain unchanged:
+
+* Loan ID
+* Equipment unit
+* Issue date
+* Original due date
+* Loan status
+* Equipment availability state
+
+Only the current borrower changes.
+
+Example:
+
+```text
+Rahul
+  ↓
+Loan #25
+  ↓
+Canon EOS 1500D - Unit 2
+  ↓
+Due: 20 September
+```
+
+After transfer:
+
+```text
+Aman
+  ↓
+Loan #25
+  ↓
+Canon EOS 1500D - Unit 2
+  ↓
+Due: 20 September
+```
+
+The equipment must never temporarily become `AVAILABLE`.
+
+---
+
+## Transfer API
+
+The transfer endpoint is:
+
+```http
+POST /api/loans/{id}/transfer/
+```
+
+Example request:
+
+```json
+{
+  "new_borrower_id": 12,
+  "reason": "Equipment responsibility transferred to project partner"
+}
+```
+
+Transfer history can be retrieved using:
+
+```http
+GET /api/loans/{id}/transfers/
+```
+
+Only staff/admin users can perform transfers.
+
+Students cannot transfer loans.
+
+---
+
+# 14. Important Business Rules
+
+## Equipment Availability
+
+A physical equipment unit cannot be double-booked.
+
+Two booking periods overlap when:
+
+```text
+requested_start < existing_end
+AND
+requested_end > existing_start
+```
+
+This rule must be enforced by the backend.
+
+---
+
+## Borrowing Limits
+
+The system uses configurable borrowing limits.
+
+Important settings include:
+
+```text
+max_active_loans_per_user
+max_units_per_booking
+default_late_fee_per_day
+```
+
+A user must not exceed the configured active-loan limit.
+
+---
+
+## Late Fees
+
+Late fees are calculated using:
+
+```text
+late_fee = late_days × late_fee_per_day
+```
+
+Late days cannot be negative.
+
+The fee is based on the original due date.
+
+Transferring an overdue loan does not reset or extend its due date.
+
+---
+
+## Return Conditions
+
+When equipment is returned:
+
+```text
+Good condition
+    → AVAILABLE
+
+Damaged
+    → DAMAGED
+
+Requires maintenance
+    → MAINTENANCE
+```
+
+The backend is responsible for enforcing these rules.
+
+---
+
+# 15. User Roles
+
+## STUDENT
+
+Students can:
+
+* Register/login
+* Browse equipment
+* Check availability
+* Create bookings
+* View their bookings
+* Cancel eligible bookings
+* View current loans
+* View loan history
+* View late fees
+
+Students cannot:
+
+* Approve bookings
+* Issue equipment
+* Return equipment on behalf of staff
+* Transfer loans
+* Manage users
+* Modify system settings
+
+---
+
+## STAFF
+
+Staff can:
+
+* View equipment
+* Manage inventory
+* Review bookings
+* Approve/reject bookings
+* Issue equipment
+* Process returns
+* View overdue loans
+* Manage late fees
+* Transfer active loans
+
+---
+
+## ADMIN
+
+Admins can:
+
+* Manage users
+* Manage system settings
+* Manage inventory
+* Perform staff-level operations
+* Configure borrowing limits and late-fee settings
+
+---
+
+# 16. Debugging Guide
+
+## Backend is not running
+
+Check:
+
+```bash
+cd backend
+source .venv/bin/activate
+python manage.py check
+```
+
+Then:
+
+```bash
+python manage.py migrate
+```
+
+Then:
+
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+
+---
+
+## PostgreSQL connection error
+
+Check PostgreSQL:
+
+```bash
+service postgresql status
+```
+
+Start it if necessary:
+
+```bash
+service postgresql start
+```
+
+Test the database:
+
+```bash
+psql -U avault_user -d avault_db -h localhost
+```
+
+If authentication fails, verify the password:
+
+```bash
+su - postgres
+psql
+```
+
+Then:
+
+```sql
+ALTER USER avault_user WITH PASSWORD 'avault_password';
+```
+
+---
+
+## `manage.py` not found
+
+You are probably in the wrong directory.
+
+Run:
+
+```bash
+pwd
+ls
+```
+
+Then locate the backend:
+
+```bash
+find .. -name manage.py
+```
+
+Move into the directory containing `manage.py`.
+
+---
+
+## Python dependency error
+
+Activate the virtual environment:
+
+```bash
+source .venv/bin/activate
+```
+
+Then:
+
+```bash
+pip install -r requirements.txt
+```
+
+---
+
+## Migration errors
+
+First check:
+
+```bash
+python manage.py check
+```
+
+Then:
+
+```bash
+python manage.py showmigrations
+```
+
+Do not delete migration files or reset the database blindly.
+
+Inspect the exact migration error first.
+
+---
+
+## Port 8000 is already in use
+
+Find the process:
+
+```bash
+lsof -i :8000
+```
+
+Alternatively, stop the previous Django development server from its terminal.
+
+Then restart:
+
+```bash
+python manage.py runserver 0.0.0.0:8000
+```
+
+---
+
+## Frontend is not running
+
+From the frontend directory:
+
+```bash
 npm install
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000). Use `/register` or `/login` to authenticate against Django, then `/dashboard` to view the authenticated `/me` response and role. Students can browse `/equipment`; staff and admins can manage inventory at `/staff/equipment`.
+If dependencies are corrupted:
 
-## Checks and tests
+```bash
+rm -rf node_modules
+npm install
+npm run dev
+```
 
-Backend checks:
+---
+
+## Frontend cannot connect to backend
+
+Verify that Django is running:
+
+```text
+http://localhost:8000
+```
+
+Check the frontend's API/base URL environment variable.
+
+Make sure the frontend is pointing to the actual Codespace backend URL or configured local API URL.
+
+---
+
+# 17. Git Workflow
+
+Check changes:
+
+```bash
+git status
+```
+
+Add files:
+
+```bash
+git add .
+```
+
+Commit:
+
+```bash
+git commit -m "Update AVault"
+```
+
+Push:
+
+```bash
+git push
+```
+
+Before committing, verify that secrets are not included:
+
+```bash
+git status
+```
+
+Never commit:
+
+```text
+.env
+database passwords
+JWT secrets
+API keys
+private credentials
+```
+
+---
+
+# 18. Development Checklist
+
+Before considering a feature complete:
+
+* [ ] Backend starts successfully
+* [ ] PostgreSQL is running
+* [ ] Django checks pass
+* [ ] Migrations apply successfully
+* [ ] Frontend starts successfully
+* [ ] Authentication works
+* [ ] Role permissions work
+* [ ] Equipment can be created
+* [ ] Availability is calculated correctly
+* [ ] Double booking is prevented
+* [ ] Booking approval works
+* [ ] Equipment issue works
+* [ ] Returns work
+* [ ] Overdue status works
+* [ ] Late fees are calculated correctly
+* [ ] Borrowing limits are enforced
+* [ ] Active loan transfer works
+* [ ] Transfer does not change due date
+* [ ] Transfer does not release equipment
+* [ ] Transfer history is preserved
+* [ ] Students only see their current loans
+* [ ] Staff can manage operational workflows
+* [ ] Admin settings work
+
+---
+
+# 19. Development Principle
+
+AVault follows a backend-first approach for important business rules.
+
+Frontend validation improves user experience, but it must never be considered the security boundary.
+
+The Django backend must independently validate:
+
+* Authentication
+* Authorization
+* Booking conflicts
+* Borrowing limits
+* Loan state transitions
+* Equipment state transitions
+* Late-fee calculations
+* Loan transfers
+* Return operations
+
+This prevents users from bypassing business rules by directly calling the API.
+
+---
+
+# 20. Development Environment
+
+AVault is currently designed primarily for development in GitHub Codespaces.
+
+The local PostgreSQL database inside a Codespace is suitable for development and testing. It should not be treated as the permanent production database.
+
+For production deployment, a persistent managed PostgreSQL service should be configured separately.
+
+---
+
+## Quick Start
+
+For an already configured Codespace:
+
+### Terminal 1
 
 ```bash
 cd backend
-python manage.py check
+source .venv/bin/activate
+python manage.py migrate
+python manage.py runserver 0.0.0.0:8000
 ```
 
-Frontend checks:
+### Terminal 2
 
 ```bash
 cd frontend
-npm run build
+npm install
+npm run dev
 ```
 
-Run the Phase 2 through Phase 10 tests with:
+Then open the forwarded frontend port.
 
-```bash
-cd backend
-python manage.py test accounts common inventory bookings loans
-```
+---
 
-The test command requires a running PostgreSQL server because the project intentionally uses PostgreSQL for both development and tests.
+# AVault
 
-## Planned API and model surface
-
-## Seed data
-
-After migrations, run:
-
-```bash
-python manage.py seed_data
-```
-
-This creates one admin, one staff user, five students, five categories, and sample equipment models with physical units. Seeded users use the password `ChangeMe123!`:
-
-```text
-admin@avault.local
-staff@avault.local
-student1@avault.local through student5@avault.local
-```
-
-Later phases will add returns, late fees, and system settings. The REST API will remain under `/api/`.
-
-## Default development credentials
-
-No seed users exist yet. Staff and admin development credentials will be documented when the seed command is introduced.
-
-## Future improvements
-
-- Equipment availability and conflict-safe bookings
-- Staff issue and return workflows
-- Automatic overdue detection and late fees
-- Student, staff, and admin dashboards
-- Audit history and production deployment configuration
+**AVault — Digital AV Equipment Lending & Inventory Management System**
